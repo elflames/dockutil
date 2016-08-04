@@ -34,6 +34,7 @@ def usage(e=None):
     print "usage:     %s -h" % (name,)
     print "usage:     %s --add <path to item> | <url> [--label <label>] [ folder_options ] [ position_options ] [ plist_location_specification ] [--no-restart]" % (name,)
     print "usage:     %s --remove <dock item label> | all [ plist_location_specification ] [--no-restart]" % (name,)
+    print "usage:     %s --remove-list <comma separated list of dock item labels> |[ plist_location_specification ] [--no-restart]" % (name,)
     print "usage:     %s --move <dock item label>  position_options [ plist_location_specification ]" % (name,)
     print "usage:     %s --find <dock item label> [ plist_location_specification ]" % (name,)
     print "usage:     %s --list [ plist_location_specification ]" % (name,)
@@ -118,11 +119,10 @@ def main():
     try:
         (optargs, args) = getopt.getopt(sys.argv[1:], 'hv', ["help", "version",
             "section=", "list", "find=", "add=", "move=", "replacing=",
-            "remove=", "after=", "before=", "position=", "display=", "view=",
-            "sort=", "label=", "type=", "allhomes", "homeloc=", "no-restart", "hupdock="])
+            "remove=","remove-list=", "after=", "before=", "position=", "display=", "view=",
+            "sort=", "label=", "type=", "allhomes", "homeloc=", "no-restart", "hupdock=", ])
     except getopt.GetoptError, e:  # if parsing of options fails, display usage and parse error
         usage(e)
-
     # setup default values
     global verbose
     add_path = None
@@ -145,6 +145,7 @@ def main():
     label_name = None
     home_directories_loc = '/Users'
     restart_dock = True
+    remove_list = None
 
     for opt, arg in optargs:
         if opt in ("-h", "--help"):
@@ -164,6 +165,8 @@ def main():
             find_label = arg
         elif opt == "--remove":
             remove_label = arg
+        elif opt == "--remove-list":
+            remove_list = arg
         elif opt == "--after":
             after_item = arg
         elif opt == "--before":
@@ -216,7 +219,7 @@ def main():
                 restart_dock = False
 
     # check for an action
-    if add_path == None and remove_label == None and move_label == None and find_label == None and list == False:
+    if add_path == None and remove_label == None and move_label == None and find_label == None and list == False and remove_list == None:
         usage('no action was specified')
 
 
@@ -263,6 +266,17 @@ def main():
                 commitPlist(pl, plist_path, restart_dock)
             else:
                 print 'item', remove_label, 'was not found in', plist_path
+        if remove_list != None:  # --remove list action
+            pl = readPlist(plist_path)
+            r_list  = remove_list.split(",")
+            successful_removes = 0
+            for remove in r_list:
+                if removeItem(pl, remove):
+                    successful_removes += 1
+                else:
+                    print 'item', remove_label, 'was not found in', plist_path
+            if successful_removes > 0:
+                commitPlist(pl, plist_path, restart_dock)
         elif list: # --list action
             pl = readPlist(plist_path)
             # print a tab separated line for each item in the plist
@@ -365,9 +379,9 @@ def writePlist(pl, plist_path):
     if os.geteuid() == 0:
         # Running defaults as the user only works if the user exists
         if valid_uid(plist_stat.st_uid):
-            subprocess.Popen(['sudo', '-u', '#%d' % plist_stat.st_uid, '-g', '#%d' % plist_stat.st_gid, 'defaults', 'import', plist_path, plist_import_path])
+            subprocess.call(['sudo', '-u', '#%d' % plist_stat.st_uid, '-g', '#%d' % plist_stat.st_gid, 'defaults', 'import', plist_path, plist_import_path])
         else:
-            subprocess.Popen(['defaults', 'import', plist_path, plist_import_path])
+            subprocess.call(['defaults', 'import', plist_path, plist_import_path])
             os.chown(plist_path, plist_stat.st_uid, plist_stat.st_gid)
             os.chmod(plist_path, plist_stat.st_mode)
     else:
@@ -404,7 +418,7 @@ def readPlist(plist_path):
     if osx_version[1] >= 9:
         subprocess.Popen(['defaults', 'export', plist_path, export_fifo]).communicate()
         # convert the export to xml
-        plist_string = subprocess.Popen(['plutil', '-convert', 'xml1', export_fifo, '-o', '-'], stdout=subprocess.PIPE).stdout.read()
+        plist_string = subprocess.check_output(['plutil', '-convert', 'xml1', export_fifo, '-o', '-'])
     else:
         try:
             cmd = ['/usr/libexec/PlistBuddy','-x','-c', 'print',plist_path]
